@@ -120,9 +120,9 @@ def _detect_backends() -> list[str]:
     return available
 
 
-def _detect_test_dir() -> str | None:
+def _detect_test_dir(root: Path | None = None) -> str | None:
     """Look for common Playwright test directories."""
-    cwd = Path.cwd()
+    base = root or Path.cwd()
     candidates = [
         "tests/e2e",
         "e2e",
@@ -131,16 +131,16 @@ def _detect_test_dir() -> str | None:
         "test",
     ]
     for c in candidates:
-        if (cwd / c).is_dir():
+        if (base / c).is_dir():
             return c
     return None
 
 
-def _detect_playwright_config() -> bool:
+def _detect_playwright_config(root: Path | None = None) -> bool:
     """Check if a Playwright config file exists in cwd."""
-    cwd = Path.cwd()
+    base = root or Path.cwd()
     names = ["playwright.config.ts", "playwright.config.js", "playwright.config.mjs"]
-    return any((cwd / n).is_file() for n in names)
+    return any((base / n).is_file() for n in names)
 
 
 def run_init(project_dir: Path | None = None) -> None:
@@ -158,7 +158,7 @@ def run_init(project_dir: Path | None = None) -> None:
         console.print("[yellow]⚠ .playspec/config.yaml already exists — skipping config generation.[/yellow]")
     else:
         config = dict(DEFAULT_CONFIG)
-        detected_dir = _detect_test_dir()
+        detected_dir = _detect_test_dir(root)
         if detected_dir:
             config["test_dir"] = detected_dir
             console.print(f"[dim]Detected test directory:[/dim] {detected_dir}")
@@ -168,7 +168,7 @@ def run_init(project_dir: Path | None = None) -> None:
             config["agent_backend"]["priority"] = backends
             console.print(f"[dim]Detected agent backends:[/dim] {', '.join(backends)}")
 
-        if _detect_playwright_config():
+        if _detect_playwright_config(root):
             console.print("[dim]Detected existing Playwright config.[/dim]")
 
         ps_dir.mkdir(parents=True, exist_ok=True)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -39,7 +39,7 @@ class AuditEntry(BaseModel):
     mode: RunMode
     profile: str = "local-dev"
     suite: str | None = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     duration_seconds: float = 0.0
     agent_backend_used: str | None = None
     trigger: str = "manual"

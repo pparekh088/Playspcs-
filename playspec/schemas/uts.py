@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UIComponent(BaseModel):
@@ -47,12 +47,14 @@ class ExistingPattern(BaseModel):
 class UnifiedTestSpec(BaseModel):
     """The single canonical spec that drives test planning and generation."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     feature_name: str
     jira_key: str | None = None
     acceptance_criteria: list[str] = Field(default_factory=list)
     business_rules: list[str] = Field(default_factory=list)
     ui_components: list[UIComponent] = Field(default_factory=list)
-    copy: CopyDeck = Field(default_factory=CopyDeck)
+    copy_deck: CopyDeck = Field(default_factory=CopyDeck, alias="copy")
     navigation_flows: list[NavigationFlow] = Field(default_factory=list)
     viewports: list[int] = Field(default_factory=list)
     existing_patterns: ExistingPattern = Field(default_factory=ExistingPattern)
