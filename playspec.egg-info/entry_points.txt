@@ -1,0 +1,2 @@
+[console_scripts]
+playspec = playspec.cli:app
