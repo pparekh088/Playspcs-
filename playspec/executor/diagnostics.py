@@ -16,7 +16,8 @@ _SELECTOR_PATTERNS = [
 ]
 
 _TIMEOUT_PATTERNS = [
-    re.compile(r"Timeout \d+ms exceeded", re.IGNORECASE),
+    re.compile(r"timeout.*\d+ms", re.IGNORECASE),
+    re.compile(r"\d+ms.*exceeded", re.IGNORECASE),
     re.compile(r"navigation timeout", re.IGNORECASE),
     re.compile(r"page\.goto.*timeout", re.IGNORECASE),
 ]

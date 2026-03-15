@@ -1,0 +1,23 @@
+{
+  "name": "playspcs-",
+  "version": "1.0.0",
+  "description": "Regression platform with agentic test generation for Playwright.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:42871/git/pparekh088/Playspcs-"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "playwright": "^1.56.0"
+  }
+}

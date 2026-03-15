@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Acme — Dashboard</title>
+  <style>
+    body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 24px; }
+    header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb; margin-bottom: 24px; }
+    h1 { font-size: 1.5rem; }
+    nav ul { list-style: none; display: flex; gap: 24px; padding: 0; margin: 0; }
+    nav a { text-decoration: none; color: #374151; font-weight: 500; }
+    nav a:hover { color: #2563eb; }
+    .welcome { font-size: 1.125rem; color: #374151; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+    .stat-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+    .stat-card h3 { font-size: .75rem; color: #6b7280; text-transform: uppercase; margin: 0 0 8px; }
+    .stat-card .value { font-size: 2rem; font-weight: 700; color: #111827; }
+    button[data-testid="logout"] { background: none; border: 1px solid #e5e7eb; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 data-testid="dashboard-heading">Dashboard</h1>
+    <nav>
+      <ul>
+        <li><a href="#" data-testid="nav-orders">Orders</a></li>
+        <li><a href="#" data-testid="nav-products">Products</a></li>
+        <li><a href="#" data-testid="nav-reports">Reports</a></li>
+      </ul>
+    </nav>
+    <button data-testid="logout" onclick="window.location.href='index.html'">Logout</button>
+  </header>
+
+  <p class="welcome" data-testid="welcome-message">Welcome back, user@example.com</p>
+
+  <div class="stats">
+    <div class="stat-card">
+      <h3>Total Orders</h3>
+      <div class="value" data-testid="stat-orders">142</div>
+    </div>
+    <div class="stat-card">
+      <h3>Revenue</h3>
+      <div class="value" data-testid="stat-revenue">$8,430</div>
+    </div>
+    <div class="stat-card">
+      <h3>Customers</h3>
+      <div class="value" data-testid="stat-customers">89</div>
+    </div>
+  </div>
+</body>
+</html>

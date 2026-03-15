@@ -37,12 +37,16 @@ def run_tests(
 
     console.print(f"[dim]Executing: {' '.join(cmd[:6])}…[/dim]")
 
+    import os as _os
+    env = {**_os.environ, "PLAYWRIGHT_JSON_OUTPUT_NAME": str(json_report)}
+
     try:
         proc = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=profile.parallelism * 600,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         console.print("[red]Playwright execution timed out.[/red]")
@@ -57,7 +61,7 @@ def run_tests(
         (run_dir / "stderr.log").write_text(proc.stderr, encoding="utf-8")
 
     if json_report.is_file():
-        return _parse_json_report(json_report, run_id)
+        return _parse_json_report(json_report, run_id, test_files)
 
     return _parse_exit_code(proc, run_id)
 
@@ -86,7 +90,7 @@ def _build_command(
     return cmd
 
 
-def _parse_json_report(json_path: Path, run_id: str) -> ExecutionResult:
+def _parse_json_report(json_path: Path, run_id: str, test_files: list[str] | None = None) -> ExecutionResult:
     """Parse the Playwright JSON reporter output into an ExecutionResult."""
     try:
         data: dict[str, Any] = json.loads(json_path.read_text(encoding="utf-8"))
@@ -94,7 +98,6 @@ def _parse_json_report(json_path: Path, run_id: str) -> ExecutionResult:
         console.print(f"[yellow]Warning: failed to parse JSON report: {exc}[/yellow]")
         return ExecutionResult(run_id=run_id)
 
-    suites = data.get("suites", [])
     failures: list[TestFailure] = []
     passing_test_keys: list[str] = []
     total = 0
@@ -103,13 +106,30 @@ def _parse_json_report(json_path: Path, run_id: str) -> ExecutionResult:
     skipped = 0
     duration = data.get("stats", {}).get("duration", 0) / 1000.0
 
-    for suite in suites:
+    # Build basename → full path lookup from the test_files we ran
+    _basename_to_full: dict[str, str] = {}
+    for tf in (test_files or []):
+        _basename_to_full[Path(tf).name] = tf
+
+    def _resolve_file(reported: str) -> str:
+        """Return the full path for a reported file name."""
+        if not reported:
+            return reported
+        if "/" in reported or "\\" in reported:
+            return reported
+        return _basename_to_full.get(reported, reported)
+
+    def _walk_suite(suite: dict, file_hint: str = "") -> None:
+        nonlocal total, passed, failed, skipped
+        raw_file = suite.get("file", "") or file_hint
+        file_name = _resolve_file(raw_file) or file_hint
         for spec in suite.get("specs", []):
+            spec_file = _resolve_file(spec.get("file", "")) or file_name
+            test_file = spec_file
+            test_name = spec.get("title", "")
             for test in spec.get("tests", []):
                 total += 1
                 status = test.get("status", "")
-                test_file = suite.get("file", spec.get("file", ""))
-                test_name = spec.get("title", "")
                 if status == "expected":
                     passed += 1
                     passing_test_keys.append(f"{test_file}::{test_name}")
@@ -127,6 +147,11 @@ def _parse_json_report(json_path: Path, run_id: str) -> ExecutionResult:
                         stack_trace=error.get("stack", ""),
                         artifact_paths=[a.get("path", "") for a in last.get("attachments", [])],
                     ))
+        for child in suite.get("suites", []):
+            _walk_suite(child, file_name)
+
+    for suite in data.get("suites", []):
+        _walk_suite(suite)
 
     return ExecutionResult(
         run_id=run_id,

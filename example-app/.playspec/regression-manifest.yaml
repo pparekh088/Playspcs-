@@ -1,0 +1,24 @@
+suites:
+  smoke:
+    description: Critical path — login + dashboard
+    timeout_minutes: 5
+    tags: [smoke, p0]
+    blocking: true
+    browsers: [chromium]
+    parallelism: 2
+
+  regression:
+    description: Full regression suite
+    timeout_minutes: 15
+    tags: [regression]
+    blocking: false
+    browsers: [chromium]
+    parallelism: 4
+
+quarantine: []
+
+global_defaults:
+  timeout_minutes: 10
+  browsers: [chromium]
+  parallelism: 2
+  blocking: false
