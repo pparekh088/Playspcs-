@@ -1,0 +1,12 @@
+{
+  "name": "playspec-demo",
+  "private": true,
+  "scripts": {
+    "serve": "python3 example-app/serve.py",
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0"
+  }
+}

@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Todo App</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+        Ubuntu, Cantarell, sans-serif;
+      background: #f0f2f5;
+      color: #1a1a2e;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── Login Page ── */
+    #login-page, #todo-page {
+      width: 100%;
+      max-width: 480px;
+      padding: 0 16px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+      padding: 40px 32px;
+    }
+
+    .card h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .card .subtitle {
+      text-align: center;
+      color: #6b7280;
+      margin-bottom: 28px;
+      font-size: 14px;
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 15px;
+      transition: border-color 0.15s;
+      outline: none;
+    }
+
+    .form-group input:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+    }
+
+    .error-message {
+      color: #dc2626;
+      font-size: 13px;
+      margin-top: 12px;
+      text-align: center;
+      display: none;
+    }
+
+    .error-message.visible {
+      display: block;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn-primary {
+      background: #6366f1;
+      color: #fff;
+      width: 100%;
+      margin-top: 6px;
+    }
+
+    .btn-primary:hover {
+      background: #4f46e5;
+    }
+
+    /* ── Todo Page ── */
+    .todo-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+
+    .todo-header h1 {
+      text-align: left;
+      margin-bottom: 0;
+    }
+
+    .btn-logout {
+      background: #f3f4f6;
+      color: #374151;
+      font-size: 13px;
+      padding: 8px 16px;
+    }
+
+    .btn-logout:hover {
+      background: #e5e7eb;
+    }
+
+    .user-greeting {
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 20px;
+    }
+
+    /* Add todo */
+    .add-todo {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .add-todo input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .add-todo input:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+    }
+
+    .btn-add {
+      background: #6366f1;
+      color: #fff;
+      padding: 10px 22px;
+    }
+
+    .btn-add:hover {
+      background: #4f46e5;
+    }
+
+    /* Filters */
+    .filters {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+      background: #f3f4f6;
+      border-radius: 8px;
+      padding: 4px;
+    }
+
+    .filter-btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 0;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      color: #6b7280;
+      transition: all 0.15s;
+    }
+
+    .filter-btn:hover {
+      color: #374151;
+    }
+
+    .filter-btn.active {
+      background: #fff;
+      color: #6366f1;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+    }
+
+    /* Todo list */
+    .todo-list {
+      list-style: none;
+    }
+
+    .todo-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 8px;
+      border-bottom: 1px solid #f0f0f0;
+      transition: background 0.1s;
+    }
+
+    .todo-item:last-child {
+      border-bottom: none;
+    }
+
+    .todo-item:hover {
+      background: #fafafa;
+    }
+
+    .todo-item input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #6366f1;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .todo-text {
+      flex: 1;
+      font-size: 15px;
+      cursor: default;
+      padding: 2px 4px;
+      border-radius: 4px;
+      word-break: break-word;
+    }
+
+    .todo-item.completed .todo-text {
+      text-decoration: line-through;
+      color: #9ca3af;
+    }
+
+    .todo-text.editing {
+      background: #fff;
+      border: 1.5px solid #6366f1;
+      outline: none;
+      cursor: text;
+      padding: 4px 8px;
+    }
+
+    .btn-delete {
+      background: none;
+      border: none;
+      color: #d1d5db;
+      cursor: pointer;
+      font-size: 18px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: all 0.15s;
+      line-height: 1;
+    }
+
+    .btn-delete:hover {
+      color: #ef4444;
+      background: #fef2f2;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 32px 0;
+      color: #9ca3af;
+      font-size: 14px;
+    }
+
+    .todo-count {
+      margin-top: 16px;
+      font-size: 13px;
+      color: #9ca3af;
+      text-align: center;
+    }
+
+    /* Confirm dialog */
+    .confirm-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .confirm-dialog {
+      background: #fff;
+      border-radius: 12px;
+      padding: 28px 24px;
+      max-width: 360px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+      text-align: center;
+    }
+
+    .confirm-dialog p {
+      font-size: 15px;
+      margin-bottom: 20px;
+      color: #374151;
+    }
+
+    .confirm-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .btn-cancel {
+      background: #f3f4f6;
+      color: #374151;
+    }
+
+    .btn-cancel:hover {
+      background: #e5e7eb;
+    }
+
+    .btn-confirm-delete {
+      background: #ef4444;
+      color: #fff;
+    }
+
+    .btn-confirm-delete:hover {
+      background: #dc2626;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Login Page ── -->
+  <div id="login-page">
+    <div class="card">
+      <h1>Welcome Back</h1>
+      <p class="subtitle">Sign in to manage your tasks</p>
+      <form id="login-form">
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" placeholder="you@example.com" autocomplete="off" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="Enter your password" required>
+        </div>
+        <p id="login-error" class="error-message">Invalid email or password. Please try again.</p>
+        <button type="submit" class="btn btn-primary" data-testid="login-button">Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Todo Page ── -->
+  <div id="todo-page" class="hidden">
+    <div class="card">
+      <div class="todo-header">
+        <h1>My Todos</h1>
+        <button class="btn btn-logout" data-testid="logout-button">Logout</button>
+      </div>
+      <p class="user-greeting">Hello, <span id="user-email"></span></p>
+
+      <div class="add-todo">
+        <input type="text" id="new-todo" placeholder="What needs to be done?" data-testid="new-todo-input">
+        <button class="btn btn-add" data-testid="add-todo-button">Add</button>
+      </div>
+
+      <div class="filters">
+        <button class="filter-btn active" data-filter="all" data-testid="filter-all">All</button>
+        <button class="filter-btn" data-filter="active" data-testid="filter-active">Active</button>
+        <button class="filter-btn" data-filter="completed" data-testid="filter-completed">Completed</button>
+      </div>
+
+      <ul class="todo-list" id="todo-list"></ul>
+      <p class="todo-count" id="todo-count"></p>
+    </div>
+  </div>
+
+  <!-- ── Confirm Delete Dialog (rendered dynamically) ── -->
+
+  <script>
+    // ── State ──
+    const VALID_EMAIL = 'demo@test.com';
+    const VALID_PASSWORD = 'password123';
+
+    let currentUser = null;
+    let todos = [];
+    let nextId = 1;
+    let currentFilter = 'all';
+
+    // ── DOM refs ──
+    const loginPage = document.getElementById('login-page');
+    const todoPage = document.getElementById('todo-page');
+    const loginForm = document.getElementById('login-form');
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+    const loginError = document.getElementById('login-error');
+    const userEmailSpan = document.getElementById('user-email');
+    const logoutBtn = document.querySelector('[data-testid="logout-button"]');
+    const newTodoInput = document.getElementById('new-todo');
+    const addTodoBtn = document.querySelector('[data-testid="add-todo-button"]');
+    const todoListEl = document.getElementById('todo-list');
+    const todoCountEl = document.getElementById('todo-count');
+    const filterBtns = document.querySelectorAll('.filter-btn');
+
+    // ── Auth ──
+    loginForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+
+      if (email === VALID_EMAIL && password === VALID_PASSWORD) {
+        currentUser = email;
+        loginError.classList.remove('visible');
+        loginPage.classList.add('hidden');
+        todoPage.classList.remove('hidden');
+        userEmailSpan.textContent = currentUser;
+        emailInput.value = '';
+        passwordInput.value = '';
+        newTodoInput.focus();
+      } else {
+        loginError.classList.add('visible');
+      }
+    });
+
+    logoutBtn.addEventListener('click', () => {
+      currentUser = null;
+      todos = [];
+      nextId = 1;
+      currentFilter = 'all';
+      filterBtns.forEach(b => b.classList.toggle('active', b.dataset.filter === 'all'));
+      todoPage.classList.add('hidden');
+      loginPage.classList.remove('hidden');
+      renderTodos();
+    });
+
+    // ── Add Todo ──
+    function addTodo() {
+      const text = newTodoInput.value.trim();
+      if (!text) return;
+      todos.push({ id: nextId++, text, completed: false });
+      newTodoInput.value = '';
+      newTodoInput.focus();
+      renderTodos();
+    }
+
+    addTodoBtn.addEventListener('click', addTodo);
+    newTodoInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') addTodo();
+    });
+
+    // ── Toggle ──
+    function toggleTodo(id) {
+      const todo = todos.find(t => t.id === id);
+      if (todo) {
+        todo.completed = !todo.completed;
+        renderTodos();
+      }
+    }
+
+    // ── Delete (with confirm) ──
+    function requestDelete(id) {
+      const todo = todos.find(t => t.id === id);
+      if (!todo) return;
+
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+      overlay.setAttribute('data-testid', 'confirm-dialog');
+      overlay.innerHTML = `
+        <div class="confirm-dialog">
+          <p>Delete "<strong>${escapeHtml(todo.text)}</strong>"?</p>
+          <div class="confirm-actions">
+            <button class="btn btn-cancel" data-testid="cancel-delete">Cancel</button>
+            <button class="btn btn-confirm-delete" data-testid="confirm-delete">Delete</button>
+          </div>
+        </div>
+      `;
+
+      overlay.querySelector('[data-testid="cancel-delete"]').addEventListener('click', () => {
+        overlay.remove();
+      });
+
+      overlay.querySelector('[data-testid="confirm-delete"]').addEventListener('click', () => {
+        todos = todos.filter(t => t.id !== id);
+        overlay.remove();
+        renderTodos();
+      });
+
+      document.body.appendChild(overlay);
+    }
+
+    // ── Edit (double-click inline) ──
+    function startEdit(id, spanEl) {
+      const todo = todos.find(t => t.id === id);
+      if (!todo) return;
+
+      spanEl.setAttribute('contenteditable', 'true');
+      spanEl.classList.add('editing');
+      spanEl.focus();
+
+      // Select all text
+      const range = document.createRange();
+      range.selectNodeContents(spanEl);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+
+      const originalText = todo.text;
+
+      function finishEdit(save) {
+        spanEl.removeAttribute('contenteditable');
+        spanEl.classList.remove('editing');
+        if (save) {
+          const newText = spanEl.textContent.trim();
+          if (newText) {
+            todo.text = newText;
+          } else {
+            spanEl.textContent = originalText;
+          }
+        } else {
+          spanEl.textContent = originalText;
+        }
+        spanEl.removeEventListener('keydown', onKey);
+        spanEl.removeEventListener('blur', onBlur);
+      }
+
+      function onKey(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          finishEdit(true);
+        } else if (e.key === 'Escape') {
+          finishEdit(false);
+        }
+      }
+
+      function onBlur() {
+        finishEdit(true);
+      }
+
+      spanEl.addEventListener('keydown', onKey);
+      spanEl.addEventListener('blur', onBlur);
+    }
+
+    // ── Filters ──
+    filterBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentFilter = btn.dataset.filter;
+        filterBtns.forEach(b => b.classList.toggle('active', b === btn));
+        renderTodos();
+      });
+    });
+
+    // ── Render ──
+    function renderTodos() {
+      const filtered = todos.filter(t => {
+        if (currentFilter === 'active') return !t.completed;
+        if (currentFilter === 'completed') return t.completed;
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        const messages = {
+          all: 'No todos yet. Add one above!',
+          active: 'No active todos. Nice work!',
+          completed: 'No completed todos yet.',
+        };
+        todoListEl.innerHTML = `<li class="empty-state">${messages[currentFilter]}</li>`;
+      } else {
+        todoListEl.innerHTML = filtered.map(todo => `
+          <li class="todo-item ${todo.completed ? 'completed' : ''}" data-testid="todo-item" data-id="${todo.id}">
+            <input type="checkbox" ${todo.completed ? 'checked' : ''}
+              aria-label="Toggle ${escapeHtml(todo.text)}"
+              data-testid="todo-checkbox">
+            <span class="todo-text" data-testid="todo-text">${escapeHtml(todo.text)}</span>
+            <button class="btn-delete" data-testid="delete-todo" aria-label="Delete ${escapeHtml(todo.text)}">&times;</button>
+          </li>
+        `).join('');
+
+        // Bind events
+        todoListEl.querySelectorAll('.todo-item').forEach(li => {
+          const id = parseInt(li.dataset.id);
+          li.querySelector('[data-testid="todo-checkbox"]').addEventListener('change', () => toggleTodo(id));
+          li.querySelector('[data-testid="delete-todo"]').addEventListener('click', () => requestDelete(id));
+          li.querySelector('[data-testid="todo-text"]').addEventListener('dblclick', (e) => startEdit(id, e.target));
+        });
+      }
+
+      // Count
+      const activeCount = todos.filter(t => !t.completed).length;
+      const totalCount = todos.length;
+      if (totalCount === 0) {
+        todoCountEl.textContent = '';
+      } else {
+        todoCountEl.textContent = `${activeCount} item${activeCount !== 1 ? 's' : ''} left out of ${totalCount}`;
+      }
+    }
+
+    // ── Helpers ──
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

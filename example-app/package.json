@@ -1,0 +1,14 @@
+{
+  "name": "playspec-example-app",
+  "version": "1.0.0",
+  "description": "Example Todo app for end-to-end testing with Playwright via playspec",
+  "scripts": {
+    "serve": "python3 serve.py",
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "test:ui": "npx playwright test --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}
