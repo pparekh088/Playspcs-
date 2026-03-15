@@ -47,7 +47,7 @@ class BackendSettings(BaseModel):
 class AgentBackendConfig(BaseModel):
     """Agent backend priority and per-backend settings."""
 
-    priority: list[str] = Field(default_factory=lambda: ["copilot", "opencode", "claudecode"])
+    priority: list[str] = Field(default_factory=lambda: ["claudecode", "opencode", "copilot"])
     copilot: BackendSettings = Field(default_factory=BackendSettings)
     opencode: BackendSettings = Field(default_factory=BackendSettings)
     claudecode: BackendSettings = Field(default_factory=BackendSettings)

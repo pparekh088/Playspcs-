@@ -88,6 +88,41 @@ class TestCritical4_LocalDevProfileDoesntBlock:
         assert DEFAULT_CONFIG["profiles"]["local-dev"]["repair_policy"] == "never"
 
 
+class TestCritical5_CopilotUsesExplainNotSuggest:
+    """#5: Copilot backend must use 'explain', not 'suggest -t shell'."""
+
+    @patch("playspec.backends.copilot.subprocess.run")
+    @patch("playspec.backends.copilot.shutil.which", return_value="/usr/bin/gh")
+    def test_invocation_uses_explain(self, mock_which, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="response")
+        from playspec.backends.copilot import CopilotBackend
+        b = CopilotBackend(timeout=5)
+        b.invoke("generate a Playwright test")
+        cmd = mock_run.call_args[0][0]
+        assert "explain" in cmd
+        assert "suggest" not in cmd
+
+    def test_copilot_demoted_in_default_priority(self):
+        from playspec.config import AgentBackendConfig
+        default = AgentBackendConfig()
+        assert default.priority[-1] == "copilot", (
+            f"Copilot should be last in default priority, got: {default.priority}"
+        )
+        assert default.priority[0] != "copilot"
+
+    def test_init_default_config_priority_demotes_copilot(self):
+        from playspec.init_cmd import DEFAULT_CONFIG
+        prio = DEFAULT_CONFIG["agent_backend"]["priority"]
+        assert prio[-1] == "copilot", f"Copilot should be last in defaults: {prio}"
+        assert prio[0] == "claudecode", f"claudecode should be first in defaults: {prio}"
+
+    def test_source_has_no_suggest_invocation(self):
+        from playspec.backends import copilot
+        src = Path(copilot.__file__).read_text()
+        assert '"suggest"' not in src
+        assert "'suggest'" not in src
+
+
 class TestCritical6_CopilotNoTempFileLeak:
     """#6: CopilotBackend.invoke() must clean up temp files."""
 

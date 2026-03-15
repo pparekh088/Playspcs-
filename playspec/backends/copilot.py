@@ -1,10 +1,17 @@
 """GitHub Copilot CLI backend.
 
-Note: `gh copilot suggest -t shell` is a shell-command suggestion tool, not
-a general code-generation endpoint.  For author-mode code generation the
-OpenCode or Claude Code backends are more capable.  This backend passes the
-prompt as-is and returns whatever Copilot produces; callers should prefer
-other backends for complex generation tasks.
+The ``gh copilot`` CLI extension exposes two sub-commands:
+
+* ``suggest`` — returns a single shell/git/gh command.  Unsuitable for
+  multi-line code generation.
+* ``explain`` — accepts a natural-language query and returns an
+  explanation.  This is the closest analogue to a general-purpose prompt,
+  though it is optimised for *explaining* commands rather than *writing*
+  code.
+
+Because of these limitations the Copilot backend is ranked **last** in
+the default priority list.  For author-mode code generation, prefer
+OpenCode or Claude Code.
 """
 
 from __future__ import annotations
@@ -20,7 +27,7 @@ from playspec.backends.base import AgentBackend, AgentResponse
 
 
 class CopilotBackend(AgentBackend):
-    """Invoke GitHub Copilot via the gh copilot CLI."""
+    """Invoke GitHub Copilot via ``gh copilot explain``."""
 
     def __init__(self, timeout: int = 120) -> None:
         self._timeout = timeout
@@ -41,17 +48,22 @@ class CopilotBackend(AgentBackend):
             return False
 
     def invoke(self, prompt: str, context: dict | None = None) -> AgentResponse:
-        prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()
+        full_prompt = prompt
+        if context:
+            context_header = "\n".join(f"[{k}]: {v}" for k, v in context.items())
+            full_prompt = f"{context_header}\n\n{prompt}"
+
+        prompt_hash = hashlib.sha256(full_prompt.encode()).hexdigest()
         start = time.monotonic()
 
         prompt_file: str | None = None
         try:
             fd, prompt_file = tempfile.mkstemp(suffix=".md", prefix="playspec-")
-            os.write(fd, prompt.encode())
+            os.write(fd, full_prompt.encode())
             os.close(fd)
 
             proc = subprocess.run(
-                ["gh", "copilot", "suggest", "-t", "shell", f"cat {prompt_file}"],
+                ["gh", "copilot", "explain", full_prompt[:600]],
                 capture_output=True, text=True,
                 timeout=self._timeout,
             )
@@ -67,12 +79,8 @@ class CopilotBackend(AgentBackend):
                 os.unlink(prompt_file)
 
         elapsed = time.monotonic() - start
-        content = proc.stdout.strip()
-        if context:
-            content = f"[context keys: {', '.join(context)}]\n{content}"
-
         return AgentResponse(
-            content=content,
+            content=proc.stdout.strip(),
             backend_name=self.name(),
             duration_seconds=elapsed,
             prompt_hash=prompt_hash,

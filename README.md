@@ -100,7 +100,7 @@ naming_convention: kebab-case
 max_retries: 3
 
 agent_backend:
-  priority: [copilot, opencode, claudecode]
+  priority: [claudecode, opencode, copilot]
   copilot:
     mode: cli
   opencode:

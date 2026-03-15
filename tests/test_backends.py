@@ -82,3 +82,13 @@ class TestBackendInvoke:
         assert resp.backend_name == "copilot"
         assert resp.content == "response text"
         assert len(resp.prompt_hash) == 64
+
+    @patch("playspec.backends.copilot.subprocess.run")
+    @patch("playspec.backends.copilot.shutil.which", return_value="/usr/bin/gh")
+    def test_copilot_uses_explain_not_suggest(self, mock_which, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="explained")
+        b = CopilotBackend(timeout=5)
+        b.invoke("generate a playwright test for login")
+        cmd = mock_run.call_args[0][0]
+        assert "explain" in cmd, f"Expected 'explain' in command, got: {cmd}"
+        assert "suggest" not in cmd, f"'suggest' should not be in command: {cmd}"
