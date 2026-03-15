@@ -28,7 +28,7 @@ def create_audit(
     failures: list[str] | None = None,
     duration_seconds: float = 0.0,
     stability_updates: int = 0,
-    **kwargs,
+    agent_backend_used: str | None = None,
 ) -> AuditEntry:
     """Build an AuditEntry with current git context."""
     from playspec.integrations.git_client import get_current_branch, get_current_sha
@@ -46,7 +46,7 @@ def create_audit(
         results=results or AuditResults(),
         failures=failures or [],
         stability_updates=stability_updates,
-        **kwargs,
+        agent_backend_used=agent_backend_used,
     )
 
 

@@ -29,7 +29,7 @@ DEFAULT_CONFIG: dict = {
             "browsers": ["chromium"],
             "parallelism": 2,
             "headed": True,
-            "repair_policy": "propose",
+            "repair_policy": "never",
             "artifact_retention": "7d",
             "generation_allowed": True,
         },

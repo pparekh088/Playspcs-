@@ -9,7 +9,7 @@ from typing import Any
 
 from playspec.config import ExecutionProfile
 from playspec.console import console
-from playspec.schemas.execution_result import ExecutionResult, TestFailure, FailureType
+from playspec.schemas.execution_result import ExecutionResult, PassedTest, TestFailure, FailureType
 
 
 def run_tests(
@@ -17,6 +17,7 @@ def run_tests(
     profile: ExecutionProfile,
     run_id: str,
     test_dir: str,
+    timeout_minutes: int = 30,
 ) -> ExecutionResult:
     """Execute Playwright tests and return structured results.
 
@@ -25,6 +26,7 @@ def run_tests(
         profile: Execution profile controlling browsers, parallelism, etc.
         run_id: Unique identifier for this run.
         test_dir: Base test directory (for artifact organisation).
+        timeout_minutes: Maximum wall-clock time for the run (from suite config).
 
     Returns:
         Parsed ExecutionResult with pass/fail counts and failure details.
@@ -42,7 +44,7 @@ def run_tests(
             cmd,
             capture_output=True,
             text=True,
-            timeout=profile.parallelism * 600,
+            timeout=timeout_minutes * 60,
         )
     except subprocess.TimeoutExpired:
         console.print("[red]Playwright execution timed out.[/red]")
@@ -72,7 +74,7 @@ def _build_command(
     cmd = [
         "npx", "playwright", "test",
         *test_files,
-        f"--reporter=json",
+        f"--reporter=json:{json_report}",
         f"--output={run_dir / 'artifacts'}",
         f"--workers={profile.parallelism}",
     ]
@@ -94,35 +96,47 @@ def _parse_json_report(json_path: Path, run_id: str) -> ExecutionResult:
         console.print(f"[yellow]Warning: failed to parse JSON report: {exc}[/yellow]")
         return ExecutionResult(run_id=run_id)
 
-    suites = data.get("suites", [])
     failures: list[TestFailure] = []
+    passed_list: list[PassedTest] = []
     total = 0
     passed = 0
     failed = 0
     skipped = 0
     duration = data.get("stats", {}).get("duration", 0) / 1000.0
 
-    for suite in suites:
-        for spec in suite.get("specs", []):
-            for test in spec.get("tests", []):
-                total += 1
-                status = test.get("status", "")
-                if status == "expected":
-                    passed += 1
-                elif status == "skipped":
-                    skipped += 1
-                else:
-                    failed += 1
-                    results = test.get("results", [{}])
-                    last = results[-1] if results else {}
-                    error = last.get("error", {})
-                    failures.append(TestFailure(
-                        test_file=suite.get("file", spec.get("file", "")),
-                        test_name=spec.get("title", ""),
-                        error_message=error.get("message", ""),
-                        stack_trace=error.get("stack", ""),
-                        artifact_paths=[a.get("path", "") for a in last.get("attachments", [])],
-                    ))
+    def _walk_suites(suites: list[dict], parent_file: str = "") -> None:
+        nonlocal total, passed, failed, skipped
+        for suite in suites:
+            suite_file = suite.get("file", parent_file)
+            for spec in suite.get("specs", []):
+                for test in spec.get("tests", []):
+                    total += 1
+                    status = test.get("status", "")
+                    spec_file = spec.get("file", suite_file)
+                    spec_title = spec.get("title", "")
+                    if status == "expected":
+                        passed += 1
+                        passed_list.append(PassedTest(
+                            test_file=spec_file,
+                            test_name=spec_title,
+                        ))
+                    elif status == "skipped":
+                        skipped += 1
+                    else:
+                        failed += 1
+                        results = test.get("results", [{}])
+                        last = results[-1] if results else {}
+                        error = last.get("error", {})
+                        failures.append(TestFailure(
+                            test_file=spec_file,
+                            test_name=spec_title,
+                            error_message=error.get("message", ""),
+                            stack_trace=error.get("stack", ""),
+                            artifact_paths=[a.get("path", "") for a in last.get("attachments", [])],
+                        ))
+            _walk_suites(suite.get("suites", []), suite_file)
+
+    _walk_suites(data.get("suites", []))
 
     return ExecutionResult(
         run_id=run_id,
@@ -131,6 +145,7 @@ def _parse_json_report(json_path: Path, run_id: str) -> ExecutionResult:
         failed=failed,
         skipped=skipped,
         failures=failures,
+        passed_tests=passed_list,
         duration_seconds=duration,
     )
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import sys
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -43,10 +43,10 @@ def run_regression(
 
     if profile.repair_policy != RepairPolicy.NEVER:
         console.print("[bold red]ERROR:[/bold red] Regression mode requires repair_policy='never'. Aborting.")
-        raise typer.Exit(code=1)
+        raise SystemExit(1)
 
     if base_url_override:
-        profile.base_url = base_url_override
+        profile = profile.model_copy(update={"base_url": base_url_override})
 
     manifest = load_manifest(manifest_path)
     resolved_files: list[str] = []
@@ -82,6 +82,8 @@ def run_regression(
         console.print("[yellow]No test files resolved. Nothing to run.[/yellow]")
         return
 
+    _check_environment(profile.base_url)
+
     run_id = generate_run_id()
     console.print(f"[bold]Run:[/bold] {run_id}  |  [bold]Tests:[/bold] {len(resolved_files)}  |  [bold]Profile:[/bold] {profile_name or 'auto'}")
 
@@ -89,8 +91,15 @@ def run_regression(
 
     _run_hooks(manifest, suite_names, "setup")
 
+    timeout_mins = 30
+    if suite_names:
+        for s in suite_names:
+            sc = manifest.get_suite(s)
+            if sc and sc.timeout_minutes > timeout_mins:
+                timeout_mins = sc.timeout_minutes
+
     try:
-        result: ExecutionResult = run_tests(resolved_files, profile, run_id, config.test_dir)
+        result: ExecutionResult = run_tests(resolved_files, profile, run_id, config.test_dir, timeout_minutes=timeout_mins)
     finally:
         _run_hooks(manifest, suite_names, "teardown")
 
@@ -98,6 +107,14 @@ def run_regression(
         failure.failure_type = classify_failure(failure)
 
     suggested = generate_suggested_fixes(result)
+
+    if suggested:
+        fixes_path = Path(".playspec") / "runs" / run_id / "suggested-fixes.json"
+        fixes_path.parent.mkdir(parents=True, exist_ok=True)
+        fixes_path.write_text(
+            json.dumps([f.model_dump() for f in suggested], indent=2, default=str),
+            encoding="utf-8",
+        )
 
     stability = load_stability()
     updates = stability.update(result)
@@ -140,6 +157,25 @@ def _run_hooks(manifest: Manifest, suite_names: list[str] | None, phase: str) ->
                 console.print(f"[red]Hook failed ({phase} for '{s}'):[/red] {exc.stderr.decode()[:500] if exc.stderr else 'unknown error'}")
             except subprocess.TimeoutExpired:
                 console.print(f"[red]Hook timed out ({phase} for '{s}').[/red]")
+
+
+def _check_environment(base_url: str) -> None:
+    """Verify the target environment is reachable before running tests."""
+    if not base_url or base_url.startswith("$"):
+        return
+    import httpx
+    try:
+        with httpx.Client(timeout=10, follow_redirects=True) as client:
+            resp = client.head(base_url)
+            if resp.status_code >= 500:
+                console.print(f"[yellow]Warning: {base_url} returned HTTP {resp.status_code}.[/yellow]")
+    except httpx.ConnectError:
+        console.print(f"[bold red]ERROR:[/bold red] Cannot reach {base_url}. Is the environment running?")
+        raise SystemExit(1)
+    except httpx.TimeoutException:
+        console.print(f"[yellow]Warning: {base_url} timed out (10s). Tests may fail.[/yellow]")
+    except Exception:
+        pass
 
 
 def _print_summary(result: ExecutionResult, suggested: list, run_id: str) -> None:

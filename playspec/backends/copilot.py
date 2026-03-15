@@ -1,8 +1,16 @@
-"""GitHub Copilot CLI backend."""
+"""GitHub Copilot CLI backend.
+
+Note: `gh copilot suggest -t shell` is a shell-command suggestion tool, not
+a general code-generation endpoint.  For author-mode code generation the
+OpenCode or Claude Code backends are more capable.  This backend passes the
+prompt as-is and returns whatever Copilot produces; callers should prefer
+other backends for complex generation tasks.
+"""
 
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import subprocess
 import tempfile
@@ -36,13 +44,14 @@ class CopilotBackend(AgentBackend):
         prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()
         start = time.monotonic()
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-            f.write(prompt)
-            prompt_file = f.name
-
+        prompt_file: str | None = None
         try:
+            fd, prompt_file = tempfile.mkstemp(suffix=".md", prefix="playspec-")
+            os.write(fd, prompt.encode())
+            os.close(fd)
+
             proc = subprocess.run(
-                ["gh", "copilot", "suggest", "-t", "shell", prompt],
+                ["gh", "copilot", "suggest", "-t", "shell", f"cat {prompt_file}"],
                 capture_output=True, text=True,
                 timeout=self._timeout,
             )
@@ -53,10 +62,17 @@ class CopilotBackend(AgentBackend):
                 duration_seconds=time.monotonic() - start,
                 prompt_hash=prompt_hash,
             )
+        finally:
+            if prompt_file and os.path.exists(prompt_file):
+                os.unlink(prompt_file)
 
         elapsed = time.monotonic() - start
+        content = proc.stdout.strip()
+        if context:
+            content = f"[context keys: {', '.join(context)}]\n{content}"
+
         return AgentResponse(
-            content=proc.stdout.strip(),
+            content=content,
             backend_name=self.name(),
             duration_seconds=elapsed,
             prompt_hash=prompt_hash,

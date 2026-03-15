@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -149,9 +151,21 @@ def load_config(path: Path | None = None) -> PlaySpecConfig:
         )
 
     raw_text = path.read_text(encoding="utf-8")
+    raw_text = _interpolate_env_vars(raw_text)
     data: dict[str, Any] = yaml.safe_load(raw_text) or {}
 
     try:
         return PlaySpecConfig.model_validate(data)
     except Exception as exc:
         raise ValueError(f"Invalid config in {path}: {exc}") from exc
+
+
+_ENV_VAR_RE = re.compile(r"\$([A-Z_][A-Z0-9_]*)")
+
+
+def _interpolate_env_vars(text: str) -> str:
+    """Replace $VAR_NAME references with their environment variable values."""
+    def _replace(match: re.Match) -> str:
+        var = match.group(1)
+        return os.getenv(var, match.group(0))
+    return _ENV_VAR_RE.sub(_replace, text)

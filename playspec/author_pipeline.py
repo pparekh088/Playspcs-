@@ -52,6 +52,10 @@ def run_author(
     backend = get_backend(config, override=backend_name)
     run_id = generate_run_id()
 
+    if apply_fixes_run_id:
+        _apply_fixes_from_run(apply_fixes_run_id, backend, config)
+        return
+
     console.print(Panel(f"[bold]Author Mode[/bold] — {jira_key}\nBackend: {backend.name()}\nRun: {run_id}", expand=False))
 
     with console.status("[bold blue]Gathering context…"):
@@ -167,3 +171,38 @@ def run_plan(
     if export_json:
         export_json.write_text(test_plan.model_dump_json(indent=2), encoding="utf-8")
         console.print(f"[green]✓[/green] Plan exported to {export_json}")
+
+
+def _apply_fixes_from_run(run_id: str, backend, config) -> None:
+    """Load suggested fixes from a previous regression run and apply them via repair agent."""
+    import json
+
+    fixes_path = Path(".playspec") / "runs" / run_id / "suggested-fixes.json"
+    if not fixes_path.is_file():
+        console.print(f"[red]No suggested-fixes.json found in run {run_id}.[/red]")
+        return
+
+    fixes = json.loads(fixes_path.read_text(encoding="utf-8"))
+    console.print(f"[bold]Applying {len(fixes)} suggested fix(es) from run {run_id}[/bold]")
+
+    from playspec.schemas.execution_result import ExecutionResult, TestFailure, FailureType
+    from playspec.agents.repair_agent import repair_tests
+    from playspec.run_id import generate_run_id
+
+    failures = [
+        TestFailure(
+            test_file=f.get("test_file", ""),
+            test_name=f.get("test_name", ""),
+            failure_type=FailureType(f.get("failure_type", "unknown")),
+            error_message=f.get("error_message", ""),
+        )
+        for f in fixes
+    ]
+    result = ExecutionResult(
+        run_id=run_id,
+        total_tests=len(failures),
+        failed=len(failures),
+        failures=failures,
+    )
+    new_run_id = generate_run_id()
+    repair_tests(result=result, backend=backend, config=config, max_retries=config.max_retries, run_id=new_run_id)
