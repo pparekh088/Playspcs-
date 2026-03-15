@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "playspec"
+version = "0.1.0"
+description = "Regression platform with agentic test generation for Playwright"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+dependencies = [
+    "typer[all]>=0.9.0",
+    "rich>=13.0",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "httpx>=0.25.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+]
+
+[project.scripts]
+playspec = "playspec.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["playspec*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::pytest.PytestCollectionWarning",
+]
