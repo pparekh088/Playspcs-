@@ -96,6 +96,7 @@ def _parse_json_report(json_path: Path, run_id: str) -> ExecutionResult:
 
     suites = data.get("suites", [])
     failures: list[TestFailure] = []
+    passing_test_keys: list[str] = []
     total = 0
     passed = 0
     failed = 0
@@ -107,8 +108,11 @@ def _parse_json_report(json_path: Path, run_id: str) -> ExecutionResult:
             for test in spec.get("tests", []):
                 total += 1
                 status = test.get("status", "")
+                test_file = suite.get("file", spec.get("file", ""))
+                test_name = spec.get("title", "")
                 if status == "expected":
                     passed += 1
+                    passing_test_keys.append(f"{test_file}::{test_name}")
                 elif status == "skipped":
                     skipped += 1
                 else:
@@ -117,8 +121,8 @@ def _parse_json_report(json_path: Path, run_id: str) -> ExecutionResult:
                     last = results[-1] if results else {}
                     error = last.get("error", {})
                     failures.append(TestFailure(
-                        test_file=suite.get("file", spec.get("file", "")),
-                        test_name=spec.get("title", ""),
+                        test_file=test_file,
+                        test_name=test_name,
                         error_message=error.get("message", ""),
                         stack_trace=error.get("stack", ""),
                         artifact_paths=[a.get("path", "") for a in last.get("attachments", [])],
@@ -131,6 +135,7 @@ def _parse_json_report(json_path: Path, run_id: str) -> ExecutionResult:
         failed=failed,
         skipped=skipped,
         failures=failures,
+        passing_test_keys=passing_test_keys,
         duration_seconds=duration,
     )
 

@@ -25,3 +25,4 @@ class SuggestedFix(BaseModel):
     error_message: str = ""
     proposed_patch: str = ""
     confidence: Confidence = Confidence.LOW
+    is_auto_applicable: bool = False

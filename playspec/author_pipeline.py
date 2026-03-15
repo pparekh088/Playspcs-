@@ -18,6 +18,7 @@ def run_author(
     copy_deck_path: Path | None = None,
     output_dir: Path | None = None,
     backend_name: str | None = None,
+    profile_name: str | None = None,
     max_retries: int = 3,
     skip_repair: bool = False,
     apply_fixes_run_id: str | None = None,
@@ -48,7 +49,7 @@ def run_author(
     from playspec.schemas.audit_entry import AuditResults, RunMode
 
     config = load_config()
-    profile = config.get_profile("local-dev")
+    profile = config.get_profile(profile_name)
     backend = get_backend(config, override=backend_name)
     run_id = generate_run_id()
 
@@ -85,18 +86,23 @@ def run_author(
 
     if result.failed > 0 and not skip_repair:
         console.print("[bold]Starting repair loop…[/bold]")
-        repair_tests(
+        repaired_count = repair_tests(
             result=result,
             backend=backend,
             config=config,
+            profile=profile,
             max_retries=max_retries,
             run_id=run_id,
         )
+        if repaired_count > 0:
+            with console.status("[bold blue]Re-running tests after repairs…"):
+                result = execute_tests(generated_files, profile, run_id, config.test_dir)
+            console.print(f"Post-repair results: ✅ {result.passed}  ❌ {result.failed}  ⏭ {result.skipped}")
 
     audit = create_audit(
         run_id=run_id,
         mode=RunMode.AUTHOR,
-        profile="local-dev",
+        profile=profile_name or "auto",
         suite=jira_key,
         resolved_tests=len(generated_files),
         results=AuditResults(passed=result.passed, failed=result.failed, skipped=result.skipped),

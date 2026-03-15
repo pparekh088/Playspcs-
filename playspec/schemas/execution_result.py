@@ -36,4 +36,5 @@ class ExecutionResult(BaseModel):
     failed: int = 0
     skipped: int = 0
     failures: list[TestFailure] = Field(default_factory=list)
+    passing_test_keys: list[str] = Field(default_factory=list)
     duration_seconds: float = 0.0
