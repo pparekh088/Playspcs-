@@ -27,6 +27,13 @@ class TestFailure(BaseModel):
     artifact_paths: list[str] = Field(default_factory=list)
 
 
+class PassedTest(BaseModel):
+    """Minimal record of a passing test (for stability tracking)."""
+
+    test_file: str
+    test_name: str
+
+
 class ExecutionResult(BaseModel):
     """Aggregate result of a Playwright test execution run."""
 
@@ -37,4 +44,5 @@ class ExecutionResult(BaseModel):
     skipped: int = 0
     failures: list[TestFailure] = Field(default_factory=list)
     passing_test_keys: list[str] = Field(default_factory=list)
+    passed_tests: list[PassedTest] = Field(default_factory=list)
     duration_seconds: float = 0.0

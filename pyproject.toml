@@ -24,7 +24,7 @@ dev = [
 ]
 
 [project.scripts]
-playspec = "playspec.cli:app"
+playspec = "playspec.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["playspec*"]

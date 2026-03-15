@@ -18,7 +18,7 @@ DEFAULT_CONFIG: dict = {
     "naming_convention": "kebab-case",
     "max_retries": 3,
     "agent_backend": {
-        "priority": ["copilot", "opencode", "claudecode"],
+        "priority": ["claudecode", "opencode", "copilot"],
         "copilot": {"mode": "cli"},
         "opencode": {"mode": "cli"},
         "claudecode": {"mode": "cli"},
@@ -29,7 +29,7 @@ DEFAULT_CONFIG: dict = {
             "browsers": ["chromium"],
             "parallelism": 2,
             "headed": True,
-            "repair_policy": "propose",
+            "repair_policy": "never",
             "artifact_retention": "7d",
             "generation_allowed": True,
         },
@@ -103,11 +103,11 @@ DEFAULT_MANIFEST: dict = {
 
 
 def _detect_backends() -> list[str]:
-    """Return names of agent backends available on PATH."""
+    """Return names of agent backends available on PATH, preferred-first."""
     checks = {
-        "copilot": ["gh", "copilot", "--version"],
-        "opencode": ["opencode", "--version"],
         "claudecode": ["claude", "--version"],
+        "opencode": ["opencode", "--version"],
+        "copilot": ["gh", "copilot", "--version"],
     }
     available: list[str] = []
     for name, cmd in checks.items():
@@ -157,7 +157,8 @@ def run_init(project_dir: Path | None = None) -> None:
     if config_path.is_file():
         console.print("[yellow]⚠ .playspec/config.yaml already exists — skipping config generation.[/yellow]")
     else:
-        config = dict(DEFAULT_CONFIG)
+        import copy
+        config = copy.deepcopy(DEFAULT_CONFIG)
         detected_dir = _detect_test_dir(root)
         if detected_dir:
             config["test_dir"] = detected_dir

@@ -45,14 +45,19 @@ class Manifest:
         if not test_root.is_dir():
             return []
         test_files: list[str] = []
-        changed_basenames = {Path(f).stem for f in changed_files}
+        import_patterns = []
+        for f in changed_files:
+            stem = Path(f).stem
+            import_patterns.append(re.compile(
+                rf"""(?:import|from|require)\s*[\(\s]['"]\S*{re.escape(stem)}['"]"""
+            ))
         for tf in test_root.rglob("*.spec.ts"):
             try:
                 content = tf.read_text(encoding="utf-8")
             except OSError:
                 continue
-            for basename in changed_basenames:
-                if basename in content:
+            for pattern in import_patterns:
+                if pattern.search(content):
                     test_files.append(str(tf))
                     break
         return test_files
@@ -63,7 +68,7 @@ class Manifest:
 
     def get_quarantined(self) -> set[str]:
         """Return the set of quarantined test file paths."""
-        return set(self._data.quarantine)
+        return self._data.quarantine_paths()
 
     def is_blocking(self, suite_name: str) -> bool:
         """Whether failures in this suite should cause a non-zero exit."""

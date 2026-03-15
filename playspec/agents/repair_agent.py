@@ -60,6 +60,7 @@ def repair_tests(
         current_stack = failure.stack_trace
         fixed = False
 
+        repaired = False
         for attempt in range(1, max_retries + 1):
             console.print(f"  Attempt {attempt}/{max_retries}…")
 
@@ -93,8 +94,7 @@ def repair_tests(
             # Apply patch and validate by re-running the test
             test_path.write_text(patched_content, encoding="utf-8")
             validation = execute_tests([str(test_path)], profile, f"{run_id}-repair{attempt}", config.test_dir)
-
-            if validation.failed == 0:
+            if _verify_patch(validation):
                 console.print(f"  [green]✓ Repair validated — test now passes.[/green]")
                 fixed = True
                 repaired += 1
@@ -112,3 +112,8 @@ def repair_tests(
 
     console.print(f"\n[bold]Repairs complete:[/bold] {repaired}/{len(result.failures)} tests fixed")
     return repaired
+
+
+def _verify_patch(validation) -> bool:
+    """Return True if the validation run produced zero failures."""
+    return validation.failed == 0

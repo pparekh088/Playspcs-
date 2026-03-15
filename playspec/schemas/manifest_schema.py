@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class SuiteHooks(BaseModel):
@@ -46,6 +48,32 @@ class RegressionManifest(BaseModel):
     """Top-level regression manifest that drives suite resolution."""
 
     suites: dict[str, SuiteConfig] = Field(default_factory=dict)
-    quarantine: list[str] = Field(default_factory=list)
+    quarantine: list[str | QuarantineEntry] = Field(default_factory=list)
     hooks: dict[str, SuiteHooks] = Field(default_factory=dict)
     global_defaults: GlobalDefaults = Field(default_factory=GlobalDefaults)
+
+    @field_validator("quarantine", mode="before")
+    @classmethod
+    def _normalise_quarantine(cls, v: Any) -> list:
+        """Accept both plain strings and QuarantineEntry dicts."""
+        if not isinstance(v, list):
+            return v
+        result = []
+        for item in v:
+            if isinstance(item, str):
+                result.append(item)
+            elif isinstance(item, dict):
+                result.append(QuarantineEntry.model_validate(item))
+            else:
+                result.append(item)
+        return result
+
+    def quarantine_paths(self) -> set[str]:
+        """Return the set of quarantined file paths regardless of entry format."""
+        paths: set[str] = set()
+        for entry in self.quarantine:
+            if isinstance(entry, str):
+                paths.add(entry)
+            elif isinstance(entry, QuarantineEntry):
+                paths.add(entry.path)
+        return paths

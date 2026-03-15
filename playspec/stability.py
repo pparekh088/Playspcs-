@@ -60,13 +60,18 @@ class StabilityStore:
     def update(self, result: ExecutionResult, run_id: str = "") -> int:
         """Apply an ExecutionResult to the store. Returns number of updates."""
         updates = 0
+        failed_keys: set[str] = set()
         for f in result.failures:
             key = f"{f.test_file}::{f.test_name}"
+            failed_keys.add(key)
             rec = self.records.setdefault(key, TestStabilityRecord())
             rec.record_fail()
             updates += 1
 
-        for key in result.passing_test_keys:
+        pass_keys: list[str] = list(result.passing_test_keys)
+        if not pass_keys:
+            pass_keys = [f"{p.test_file}::{p.test_name}" for p in result.passed_tests]
+        for key in pass_keys:
             rec = self.records.setdefault(key, TestStabilityRecord())
             rec.record_pass(run_id or result.run_id)
             updates += 1

@@ -55,13 +55,34 @@ def get_issue(key: str, config: PlaySpecConfig) -> dict[str, Any]:
 
 def _resolve_token(config: PlaySpecConfig) -> str:
     """Get JIRA auth token based on configured method."""
+    import shutil
+    import subprocess
+
     token = os.getenv("JIRA_TOKEN", "")
-    if not token:
-        raise RuntimeError(
-            "JIRA_TOKEN env var is not set. "
-            "Set it or configure auth.jira=cli and run 'atlas auth login'."
-        )
-    return token
+    if token:
+        return token
+
+    if config.auth.jira == AuthMethod.CLI:
+        if shutil.which("atlas"):
+            try:
+                proc = subprocess.run(
+                    ["atlas", "auth", "status", "--output", "json"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if proc.returncode == 0:
+                    import json
+                    data = json.loads(proc.stdout)
+                    cli_token = data.get("access_token", "")
+                    if cli_token:
+                        return cli_token
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
+                pass
+
+    raise RuntimeError(
+        "JIRA authentication failed. Either:\n"
+        "  • Set JIRA_TOKEN env var, or\n"
+        "  • Install Atlassian CLI and run 'atlas auth login'"
+    )
 
 
 def _extract_text(desc: Any) -> str:

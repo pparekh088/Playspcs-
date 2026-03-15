@@ -9,7 +9,7 @@ from typing import Any
 
 from playspec.config import ExecutionProfile
 from playspec.console import console
-from playspec.schemas.execution_result import ExecutionResult, TestFailure, FailureType
+from playspec.schemas.execution_result import ExecutionResult, PassedTest, TestFailure, FailureType
 
 
 def run_tests(
@@ -17,6 +17,7 @@ def run_tests(
     profile: ExecutionProfile,
     run_id: str,
     test_dir: str,
+    timeout_minutes: int = 30,
 ) -> ExecutionResult:
     """Execute Playwright tests and return structured results.
 
@@ -25,6 +26,7 @@ def run_tests(
         profile: Execution profile controlling browsers, parallelism, etc.
         run_id: Unique identifier for this run.
         test_dir: Base test directory (for artifact organisation).
+        timeout_minutes: Maximum wall-clock time for the run (from suite config).
 
     Returns:
         Parsed ExecutionResult with pass/fail counts and failure details.
@@ -37,16 +39,12 @@ def run_tests(
 
     console.print(f"[dim]Executing: {' '.join(cmd[:6])}…[/dim]")
 
-    import os as _os
-    env = {**_os.environ, "PLAYWRIGHT_JSON_OUTPUT_NAME": str(json_report)}
-
     try:
         proc = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=profile.parallelism * 600,
-            env=env,
+            timeout=timeout_minutes * 60,
         )
     except subprocess.TimeoutExpired:
         console.print("[red]Playwright execution timed out.[/red]")
@@ -76,7 +74,7 @@ def _build_command(
     cmd = [
         "npx", "playwright", "test",
         *test_files,
-        f"--reporter=json",
+        f"--reporter=json:{json_report}",
         f"--output={run_dir / 'artifacts'}",
         f"--workers={profile.parallelism}",
     ]
@@ -100,6 +98,7 @@ def _parse_json_report(json_path: Path, run_id: str, test_files: list[str] | Non
 
     failures: list[TestFailure] = []
     passing_test_keys: list[str] = []
+    passed_tests: list[PassedTest] = []
     total = 0
     passed = 0
     failed = 0
@@ -133,6 +132,7 @@ def _parse_json_report(json_path: Path, run_id: str, test_files: list[str] | Non
                 if status == "expected":
                     passed += 1
                     passing_test_keys.append(f"{test_file}::{test_name}")
+                    passed_tests.append(PassedTest(test_file=test_file, test_name=test_name))
                 elif status == "skipped":
                     skipped += 1
                 else:
@@ -161,6 +161,7 @@ def _parse_json_report(json_path: Path, run_id: str, test_files: list[str] | Non
         skipped=skipped,
         failures=failures,
         passing_test_keys=passing_test_keys,
+        passed_tests=passed_tests,
         duration_seconds=duration,
     )
 

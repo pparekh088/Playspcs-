@@ -27,11 +27,26 @@ def add_quarantine(test_path: str, reason: str = "") -> None:
     raw, path = _load_raw_manifest()
     quarantine: list = raw.setdefault("quarantine", [])
 
-    if test_path in quarantine:
+    existing_paths = set()
+    for item in quarantine:
+        if isinstance(item, str):
+            existing_paths.add(item)
+        elif isinstance(item, dict):
+            existing_paths.add(item.get("path", ""))
+    if test_path in existing_paths:
         console.print(f"[yellow]{test_path} is already quarantined.[/yellow]")
         return
 
-    quarantine.append(test_path)
+    entry: dict | str
+    if reason:
+        entry = {
+            "path": test_path,
+            "reason": reason,
+            "added_at": datetime.now(timezone.utc).isoformat(),
+        }
+    else:
+        entry = test_path
+    quarantine.append(entry)
     path.write_text(yaml.dump(raw, default_flow_style=False, sort_keys=False), encoding="utf-8")
     console.print(f"[green]✓[/green] Quarantined {test_path}" + (f" — {reason}" if reason else ""))
 
@@ -41,12 +56,21 @@ def remove_quarantine(test_path: str) -> None:
     raw, path = _load_raw_manifest()
     quarantine: list = raw.get("quarantine", [])
 
-    if test_path not in quarantine:
+    new_quarantine = []
+    found = False
+    for item in quarantine:
+        if isinstance(item, str) and item == test_path:
+            found = True
+        elif isinstance(item, dict) and item.get("path") == test_path:
+            found = True
+        else:
+            new_quarantine.append(item)
+
+    if not found:
         console.print(f"[yellow]{test_path} is not in quarantine.[/yellow]")
         return
 
-    quarantine.remove(test_path)
-    raw["quarantine"] = quarantine
+    raw["quarantine"] = new_quarantine
     path.write_text(yaml.dump(raw, default_flow_style=False, sort_keys=False), encoding="utf-8")
     console.print(f"[green]✓[/green] Removed {test_path} from quarantine.")
 

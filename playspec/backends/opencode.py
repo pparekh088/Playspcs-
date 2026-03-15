@@ -32,13 +32,18 @@ class OpenCodeBackend(AgentBackend):
             return False
 
     def invoke(self, prompt: str, context: dict | None = None) -> AgentResponse:
-        prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()
+        full_prompt = prompt
+        if context:
+            context_header = "\n".join(f"[{k}]: {v}" for k, v in context.items())
+            full_prompt = f"{context_header}\n\n{prompt}"
+
+        prompt_hash = hashlib.sha256(full_prompt.encode()).hexdigest()
         start = time.monotonic()
 
         try:
             proc = subprocess.run(
                 ["opencode"],
-                input=prompt,
+                input=full_prompt,
                 capture_output=True, text=True,
                 timeout=self._timeout,
             )
