@@ -27,13 +27,13 @@ def get_issue(key: str, config: PlaySpecConfig) -> dict[str, Any]:
     Returns:
         Dict with summary, description, acceptance_criteria, labels, etc.
     """
-    token = _resolve_token(config)
     base_url = os.getenv("JIRA_BASE_URL", "")
     if not base_url:
         raise RuntimeError("JIRA_BASE_URL env var is required. Example: https://yoursite.atlassian.net")
 
     url = f"{base_url}/rest/api/3/issue/{key}"
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    headers = {"Accept": "application/json"}
+    headers["Authorization"] = _resolve_auth_header(config)
 
     with httpx.Client(timeout=30) as client:
         resp = client.get(url, headers=headers)
@@ -190,31 +190,53 @@ def create_issue(
     }
     if labels:
         fields["labels"] = labels
-    if parent_key:
-        fields["issuelinks"] = [{
-            "type": {"name": "Relates"},
-            "outwardIssue": {"key": parent_key},
-        }]
 
     try:
         with httpx.Client(timeout=30) as client:
             resp = client.post(url, headers=headers, json={"fields": fields})
             if resp.status_code == 400:
-                # Bug type may not exist — retry with Task
-                if issue_type == "Bug":
+                # Issue type may not exist (e.g., team-managed projects
+                # only have Task/Sub-task). Try Task as fallback.
+                if issue_type != "Task":
                     fields["issuetype"] = {"name": "Task"}
                     resp = client.post(url, headers=headers, json={"fields": fields})
             resp.raise_for_status()
         key = resp.json().get("key", "")
         console.print(f"  [green]Created Jira issue {key}[/green]")
+
+        # Link to parent ticket via separate API call (issuelinks
+        # cannot be set during creation on all project types).
+        if parent_key and key:
+            _link_issues(base_url, credentials, key, parent_key, headers)
+
         return key
     except Exception as exc:
         console.print(f"  [yellow]Failed to create Jira issue: {exc}[/yellow]")
         return None
 
 
+def _link_issues(base_url: str, credentials: str, from_key: str, to_key: str, headers: dict) -> None:
+    """Create a 'Relates' link between two Jira issues."""
+    url = f"{base_url}/rest/api/3/issueLink"
+    body = {
+        "type": {"name": "Relates"},
+        "inwardIssue": {"key": from_key},
+        "outwardIssue": {"key": to_key},
+    }
+    try:
+        with httpx.Client(timeout=15) as client:
+            client.post(url, headers=headers, json=body)
+    except Exception:
+        pass  # Non-critical — don't fail bug filing over a link
+
+
 def search_issues(jql: str) -> list[dict[str, Any]]:
-    """Run a JQL search and return a list of issue dicts (key, summary, status)."""
+    """Run a JQL search and return a list of issue dicts (key, summary, status).
+
+    Tries the new ``GET /rest/api/3/search/jql`` endpoint first (Atlassian
+    deprecated the old POST endpoint in 2025), then falls back to the legacy
+    ``GET /rest/api/3/search`` for on-prem / older instances.
+    """
     base_url = os.getenv("JIRA_BASE_URL", "")
     email = os.getenv("JIRA_EMAIL", "")
     api_token = os.getenv("JIRA_API_TOKEN", "")
@@ -223,19 +245,15 @@ def search_issues(jql: str) -> list[dict[str, Any]]:
         return []
 
     credentials = base64.b64encode(f"{email}:{api_token}".encode()).decode()
-    url = f"{base_url}/rest/api/3/search"
     headers = {
         "Authorization": f"Basic {credentials}",
-        "Content-Type": "application/json",
         "Accept": "application/json",
     }
+    params = {"jql": jql, "maxResults": 50, "fields": "summary,status"}
 
-    try:
-        with httpx.Client(timeout=30) as client:
-            resp = client.post(url, headers=headers, json={"jql": jql, "maxResults": 50, "fields": ["summary", "status"]})
-            resp.raise_for_status()
+    def _parse_issues(data: dict) -> list[dict[str, Any]]:
         results = []
-        for issue in resp.json().get("issues", []):
+        for issue in data.get("issues", []):
             fields = issue.get("fields", {})
             results.append({
                 "key": issue.get("key", ""),
@@ -243,6 +261,16 @@ def search_issues(jql: str) -> list[dict[str, Any]]:
                 "status": fields.get("status", {}).get("name", ""),
             })
         return results
+
+    try:
+        with httpx.Client(timeout=30) as client:
+            # New endpoint (Jira Cloud 2025+)
+            resp = client.get(f"{base_url}/rest/api/3/search/jql", headers=headers, params=params)
+            if resp.status_code == 404:
+                # Fallback: legacy endpoint (Jira Server / Data Center)
+                resp = client.get(f"{base_url}/rest/api/3/search", headers=headers, params=params)
+            resp.raise_for_status()
+        return _parse_issues(resp.json())
     except Exception:
         return []
 
@@ -375,6 +403,19 @@ def _resolve_token(config: PlaySpecConfig) -> str:
         "  • Set JIRA_TOKEN env var, or\n"
         "  • Install Atlassian CLI and run 'atlas auth login'"
     )
+
+
+def _resolve_auth_header(config: PlaySpecConfig) -> str:
+    """Return an Authorization header value, preferring Basic auth (email+token)
+    and falling back to Bearer (JIRA_TOKEN / CLI)."""
+    email = os.getenv("JIRA_EMAIL", "")
+    api_token = os.getenv("JIRA_API_TOKEN", "")
+    if email and api_token:
+        credentials = base64.b64encode(f"{email}:{api_token}".encode()).decode()
+        return f"Basic {credentials}"
+    # Fall back to Bearer token
+    token = _resolve_token(config)
+    return f"Bearer {token}"
 
 
 def _extract_text(desc: Any) -> str:
