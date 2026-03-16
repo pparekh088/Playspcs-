@@ -138,8 +138,9 @@ def _find_manifest() -> Path | None:
 # ── Tag scanning helpers ────────────────────────────────────────────
 
 TAG_PATTERN = re.compile(r"//\s*@tags?:\s*(.+)", re.IGNORECASE)
-JIRA_PATTERN = re.compile(r"//\s*@jira:\s*(\S+)", re.IGNORECASE)
+JIRA_PATTERN = re.compile(r"//\s*@jira:\s*(.+)", re.IGNORECASE)
 OWNER_PATTERN = re.compile(r"//\s*@owner:\s*(.+)", re.IGNORECASE)
+DESCRIBE_JIRA_PATTERN = re.compile(r"""test\.describe\(\s*['"]([A-Z]+-\d+):""")
 
 
 def parse_test_tags(file_path: str | Path) -> set[str]:
@@ -158,17 +159,125 @@ def parse_test_tags(file_path: str | Path) -> set[str]:
     return tags
 
 
-def parse_jira_key(file_path: str | Path) -> str | None:
-    """Extract the @jira: annotation from a test file header."""
+def parse_jira_keys(file_path: str | Path) -> list[str]:
+    """Extract all @jira: keys from a test file header (comma-separated supported).
+
+    Also discovers Jira keys from ``test.describe('PLAY-7: ...')`` blocks
+    throughout the entire file.
+    """
     try:
         content = Path(file_path).read_text(encoding="utf-8")
     except OSError:
-        return None
+        return []
+
+    keys: list[str] = []
+    # Header annotations (first 20 lines)
     for line in content.splitlines()[:20]:
         m = JIRA_PATTERN.match(line.strip())
         if m:
-            return m.group(1).strip()
-    return None
+            raw = m.group(1)
+            for part in raw.split(","):
+                part = part.strip()
+                if part:
+                    keys.append(part)
+
+    # Describe-block annotations (whole file)
+    for m in DESCRIBE_JIRA_PATTERN.finditer(content):
+        key = m.group(1).strip()
+        if key.upper() not in {k.upper() for k in keys}:
+            keys.append(key)
+
+    return keys
+
+
+def parse_jira_key(file_path: str | Path) -> str | None:
+    """Extract the first @jira: annotation from a test file header.
+
+    Backward-compatible wrapper around :func:`parse_jira_keys`.
+    """
+    keys = parse_jira_keys(file_path)
+    return keys[0] if keys else None
+
+
+def parse_describe_jira_keys(file_path: str | Path) -> dict[str, list[str]]:
+    """Map ``test.describe`` block names to the Jira keys found in their titles.
+
+    Returns:
+        ``{ "PLAY-7: User Logout": ["PLAY-7"], ... }``
+    """
+    try:
+        content = Path(file_path).read_text(encoding="utf-8")
+    except OSError:
+        return {}
+
+    describe_re = re.compile(r"""test\.describe\(\s*['"]((?:[A-Z]+-\d+(?:,\s*)?)+:?\s*[^'"]*?)['"]""")
+    jira_key_re = re.compile(r"[A-Z]+-\d+")
+
+    result: dict[str, list[str]] = {}
+    for m in describe_re.finditer(content):
+        title = m.group(1).strip()
+        found = jira_key_re.findall(title)
+        if found:
+            result[title] = found
+    return result
+
+
+def parse_test_to_jira_map(file_path: str | Path) -> dict[str, list[str]]:
+    """Map individual test names to their Jira keys based on describe block context.
+
+    Returns:
+        ``{ "should display the login form": ["PLAY-1"], ... }``
+    """
+    try:
+        content = Path(file_path).read_text(encoding="utf-8")
+    except OSError:
+        return {}
+
+    file_keys = parse_jira_keys(file_path)
+    jira_key_re = re.compile(r"[A-Z]+-\d+")
+
+    # Track describe blocks with brace-depth so we know when they close
+    result: dict[str, list[str]] = {}
+    # Stack entries: (keys, open_depth) where open_depth is the brace depth
+    # at the point the describe block's opening brace was counted.
+    describe_stack: list[tuple[list[str], int]] = []
+    brace_depth = 0
+
+    for line in content.splitlines():
+        stripped = line.strip()
+
+        # Detect describe block open (before counting braces on this line)
+        describe_match = re.match(r"""test\.describe\(\s*['"](.+?)['"]""", stripped)
+        test_match = re.match(r"""test\(\s*['"](.+?)['"]""", stripped) if not describe_match else None
+
+        if test_match:
+            test_name = test_match.group(1)
+            # Use innermost describe keys, fallback to file keys
+            for frame_keys, _ in reversed(describe_stack):
+                if frame_keys:
+                    result[test_name] = frame_keys
+                    break
+            else:
+                result[test_name] = list(file_keys)
+
+        # Count braces on this line
+        opens = line.count("{")
+        closes = line.count("}")
+
+        if describe_match:
+            title = describe_match.group(1)
+            keys = jira_key_re.findall(title)
+            # The describe block's opening brace is on this line
+            # After this line, brace_depth will be at the depth inside the describe
+            describe_stack.append((keys, brace_depth + opens))
+
+        brace_depth += opens - closes
+
+        # Check if any describe blocks have closed
+        while describe_stack and brace_depth < describe_stack[-1][1]:
+            describe_stack.pop()
+
+    return result
 
 
 def parse_owner(file_path: str | Path) -> str | None:
@@ -199,13 +308,17 @@ def _find_tests_by_tags(tags: list[str], test_dir: str) -> list[str]:
 
 
 def _find_tests_by_jira(jira_key: str, test_dir: str) -> list[str]:
-    """Find all .spec.ts files tagged with a specific JIRA key."""
+    """Find all .spec.ts files that reference a specific JIRA key.
+
+    Checks both header ``@jira:`` annotations and ``test.describe`` block titles.
+    """
     root = Path(test_dir)
     if not root.is_dir():
         return []
+    target = jira_key.upper()
     matches: list[str] = []
     for tf in sorted(root.rglob("*.spec.ts")):
-        key = parse_jira_key(tf)
-        if key and key.upper() == jira_key.upper():
+        keys = parse_jira_keys(tf)
+        if any(k.upper() == target for k in keys):
             matches.append(str(tf))
     return matches

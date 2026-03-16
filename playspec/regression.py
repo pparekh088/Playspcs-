@@ -16,11 +16,11 @@ from playspec.executor.runner import run_tests
 from playspec.executor.diagnostics import classify_failure, generate_suggested_fixes
 from playspec.integrations.git_client import get_changed_files, get_current_branch, get_current_sha, get_pr_changed_files
 from playspec.integrations.jira_client import post_test_results
-from playspec.manifest import load_manifest, Manifest, parse_jira_key
+from playspec.manifest import load_manifest, Manifest, parse_jira_key, parse_jira_keys
 from playspec.run_id import generate_run_id
 from playspec.schemas.audit_entry import AuditResults, RunMode
 from playspec.schemas.execution_result import ExecutionResult
-from playspec.stability import load_stability, save_stability
+from playspec.stability import StabilityStore, load_stability, save_stability
 
 
 def run_regression(
@@ -151,7 +151,14 @@ def run_regression(
 
     _print_summary(result, suggested, run_id)
 
-    _post_results_to_jira(resolved_files, result, run_id)
+    _post_results_to_jira(resolved_files, result, run_id, stability=stability)
+
+    # Auto-bug filing for persistent failures
+    if result.failed > 0:
+        from playspec.bug_filing import check_and_file_bugs
+        filed_bugs = check_and_file_bugs(stability)
+        if filed_bugs:
+            console.print(f"\n[bold]Auto-filed {len(filed_bugs)} bug(s):[/bold] {', '.join(filed_bugs)}")
 
     is_blocking = suite_names and any(manifest.is_blocking(s) for s in suite_names)
     if result.failed > 0 and is_blocking:
@@ -162,55 +169,86 @@ def _post_results_to_jira(
     resolved_files: list[str],
     result: ExecutionResult,
     run_id: str,
+    stability: "StabilityStore | None" = None,
 ) -> None:
-    """Post test results as comments to each relevant Jira ticket."""
+    """Post test results as comments to each relevant Jira ticket.
+
+    Uses per-test ``jira_keys`` (from describe-block extraction in the runner)
+    so each ticket receives only the tests that belong to it.
+    """
     import os
     if not all([os.getenv("JIRA_BASE_URL"), os.getenv("JIRA_EMAIL"), os.getenv("JIRA_API_TOKEN")]):
         return
 
-    # Map jira keys to their test files
-    jira_map: dict[str, list[str]] = {}
-    for f in resolved_files:
-        key = parse_jira_key(f)
-        if key:
-            jira_map.setdefault(key, []).append(f)
+    # Build per-ticket result buckets from individual test results
+    ticket_failures: dict[str, list[dict[str, str]]] = {}
+    ticket_passed: dict[str, list[dict[str, str]]] = {}
+    ticket_files: dict[str, set[str]] = {}
 
-    if not jira_map:
+    for failure in result.failures:
+        keys = failure.jira_keys
+        if not keys:
+            # Fallback: use file-level annotation
+            keys = parse_jira_keys(failure.test_file)
+        for k in keys:
+            ku = k.upper()
+            ticket_failures.setdefault(ku, []).append({
+                "test_name": failure.test_name,
+                "error_message": failure.error_message,
+            })
+            ticket_files.setdefault(ku, set()).add(failure.test_file)
+
+    for pt in result.passed_tests:
+        keys = pt.jira_keys
+        if not keys:
+            keys = parse_jira_keys(pt.test_file)
+        for k in keys:
+            ku = k.upper()
+            ticket_passed.setdefault(ku, []).append({
+                "test_name": pt.test_name,
+            })
+            ticket_files.setdefault(ku, set()).add(pt.test_file)
+
+    if not ticket_files:
         return
 
     console.print("\n[bold]Posting results to Jira:[/bold]")
 
-    # Build a lookup of failures by test file
-    file_failures: dict[str, list[dict[str, str]]] = {}
-    for failure in result.failures:
-        file_failures.setdefault(failure.test_file, []).append({
-            "test_name": failure.test_name,
-            "error_message": failure.error_message,
-        })
+    for jira_key in sorted(ticket_files):
+        failures = ticket_failures.get(jira_key, [])
+        passed_list = ticket_passed.get(jira_key, [])
+        passed_count = len(passed_list)
+        failed_count = len(failures)
+        total = passed_count + failed_count
+        files = ticket_files[jira_key]
 
-    # Build a lookup of passed tests by file
-    file_passed: dict[str, int] = {}
-    for pt in result.passed_tests:
-        file_passed[pt.test_file] = file_passed.get(pt.test_file, 0) + 1
-
-    for jira_key, files in jira_map.items():
-        passed = sum(file_passed.get(f, 0) for f in files)
-        failures = []
-        for f in files:
-            failures.extend(file_failures.get(f, []))
-        failed = len(failures)
-        total = passed + failed
+        # Build stability hint
+        stability_hint = ""
+        if stability:
+            pass_runs = 0
+            total_runs = 0
+            for key, rec in stability.records.items():
+                for f in files:
+                    if key.startswith(f):
+                        recent = rec.last_n_results[-3:] if rec.last_n_results else []
+                        pass_runs += sum(recent)
+                        total_runs += len(recent)
+                        break
+            if total_runs > 0:
+                stability_hint = f"{pass_runs}/{total_runs} passing last 3 runs"
 
         post_test_results(
             jira_key=jira_key,
             run_id=run_id,
-            test_file=", ".join(files),
-            passed=passed,
-            failed=failed,
+            test_file=", ".join(sorted(files)),
+            passed=passed_count,
+            failed=failed_count,
             skipped=0,
             total=total,
             duration_seconds=result.duration_seconds,
             failures=failures,
+            passed_tests=passed_list,
+            stability_hint=stability_hint,
         )
 
 

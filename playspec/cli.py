@@ -21,10 +21,12 @@ app = typer.Typer(
 inspect_app = typer.Typer(help="Inspect test inventory, suites, and coverage.", no_args_is_help=True)
 quarantine_app = typer.Typer(help="Manage quarantined tests.", no_args_is_help=True)
 audit_app = typer.Typer(help="View and manage audit trail.", no_args_is_help=True)
+report_app = typer.Typer(help="Generate reports.", no_args_is_help=True)
 
 app.add_typer(inspect_app, name="inspect")
 app.add_typer(quarantine_app, name="quarantine")
 app.add_typer(audit_app, name="audit")
+app.add_typer(report_app, name="report")
 
 
 # ── init ────────────────────────────────────────────────────────────
@@ -144,11 +146,27 @@ def inspect_suites() -> None:
 @inspect_app.command("coverage")
 def inspect_coverage(
     jira: str = typer.Option(..., "--jira", help="JIRA key to check coverage for."),
+    gap_only: bool = typer.Option(False, "--gap-only", help="Show only uncovered acceptance criteria."),
 ) -> None:
     """Show which acceptance criteria are covered by tests."""
     from playspec.inspect_cmd import show_coverage
 
-    show_coverage(jira)
+    show_coverage(jira, gap_only=gap_only)
+
+
+# ── report ──────────────────────────────────────────────────────────
+
+@report_app.command("traceability")
+def report_traceability(
+    fmt: str = typer.Option("terminal", "--format", "-f", help="Output format: terminal, json, or md."),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Write report to file."),
+    jira: Optional[str] = typer.Option(None, "--jira", help="Filter to a specific JIRA ticket."),
+    last_n: int = typer.Option(5, "--last-n", help="Number of recent runs to show."),
+) -> None:
+    """Generate a traceability matrix: Ticket -> Tests -> Results -> Stability -> Bugs."""
+    from playspec.report_cmd import show_traceability
+
+    show_traceability(fmt=fmt, output=output, jira_filter=jira, last_n=last_n)
 
 
 # ── quarantine ──────────────────────────────────────────────────────

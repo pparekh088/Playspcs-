@@ -55,6 +55,35 @@ def get_issue(key: str, config: PlaySpecConfig) -> dict[str, Any]:
     }
 
 
+def comment_exists(jira_key: str, run_id: str) -> bool:
+    """Check whether a PlaySpec comment for *run_id* already exists on the issue."""
+    base_url = os.getenv("JIRA_BASE_URL", "")
+    email = os.getenv("JIRA_EMAIL", "")
+    api_token = os.getenv("JIRA_API_TOKEN", "")
+
+    if not all([base_url, email, api_token]):
+        return False
+
+    credentials = base64.b64encode(f"{email}:{api_token}".encode()).decode()
+    url = f"{base_url}/rest/api/3/issue/{jira_key}/comment"
+    headers = {
+        "Authorization": f"Basic {credentials}",
+        "Accept": "application/json",
+    }
+
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(url, headers=headers)
+            resp.raise_for_status()
+        for comment in resp.json().get("comments", []):
+            body_text = _extract_text(comment.get("body", ""))
+            if run_id in body_text:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def post_test_results(
     jira_key: str,
     run_id: str,
@@ -65,6 +94,9 @@ def post_test_results(
     total: int,
     duration_seconds: float,
     failures: list[dict[str, str]] | None = None,
+    passed_tests: list[dict[str, str]] | None = None,
+    stability_hint: str = "",
+    deduplicate: bool = True,
 ) -> bool:
     """Post a test result summary as a comment on a JIRA issue.
 
@@ -78,6 +110,10 @@ def post_test_results(
 
     if not all([base_url, email, api_token]):
         console.print("[dim]Skipping Jira comment — JIRA_BASE_URL, JIRA_EMAIL, or JIRA_API_TOKEN not set.[/dim]")
+        return False
+
+    if deduplicate and comment_exists(jira_key, run_id):
+        console.print(f"  [dim]Skipping {jira_key} — comment for {run_id} already exists.[/dim]")
         return False
 
     credentials = base64.b64encode(f"{email}:{api_token}".encode()).decode()
@@ -99,6 +135,8 @@ def post_test_results(
         total=total,
         duration=duration_seconds,
         failures=failures or [],
+        passed_tests=passed_tests or [],
+        stability_hint=stability_hint,
     )
 
     try:
@@ -115,6 +153,100 @@ def post_test_results(
         return False
 
 
+def create_issue(
+    project_key: str,
+    summary: str,
+    description: str,
+    issue_type: str = "Bug",
+    labels: list[str] | None = None,
+    parent_key: str | None = None,
+) -> str | None:
+    """Create a new Jira issue and return its key, or ``None`` on failure."""
+    base_url = os.getenv("JIRA_BASE_URL", "")
+    email = os.getenv("JIRA_EMAIL", "")
+    api_token = os.getenv("JIRA_API_TOKEN", "")
+
+    if not all([base_url, email, api_token]):
+        console.print("[dim]Skipping Jira issue creation — env vars not set.[/dim]")
+        return None
+
+    credentials = base64.b64encode(f"{email}:{api_token}".encode()).decode()
+    url = f"{base_url}/rest/api/3/issue"
+    headers = {
+        "Authorization": f"Basic {credentials}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    fields: dict[str, Any] = {
+        "project": {"key": project_key},
+        "summary": summary,
+        "description": {
+            "version": 1,
+            "type": "doc",
+            "content": [{"type": "paragraph", "content": [{"type": "text", "text": description}]}],
+        },
+        "issuetype": {"name": issue_type},
+    }
+    if labels:
+        fields["labels"] = labels
+    if parent_key:
+        fields["issuelinks"] = [{
+            "type": {"name": "Relates"},
+            "outwardIssue": {"key": parent_key},
+        }]
+
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.post(url, headers=headers, json={"fields": fields})
+            if resp.status_code == 400:
+                # Bug type may not exist — retry with Task
+                if issue_type == "Bug":
+                    fields["issuetype"] = {"name": "Task"}
+                    resp = client.post(url, headers=headers, json={"fields": fields})
+            resp.raise_for_status()
+        key = resp.json().get("key", "")
+        console.print(f"  [green]Created Jira issue {key}[/green]")
+        return key
+    except Exception as exc:
+        console.print(f"  [yellow]Failed to create Jira issue: {exc}[/yellow]")
+        return None
+
+
+def search_issues(jql: str) -> list[dict[str, Any]]:
+    """Run a JQL search and return a list of issue dicts (key, summary, status)."""
+    base_url = os.getenv("JIRA_BASE_URL", "")
+    email = os.getenv("JIRA_EMAIL", "")
+    api_token = os.getenv("JIRA_API_TOKEN", "")
+
+    if not all([base_url, email, api_token]):
+        return []
+
+    credentials = base64.b64encode(f"{email}:{api_token}".encode()).decode()
+    url = f"{base_url}/rest/api/3/search"
+    headers = {
+        "Authorization": f"Basic {credentials}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.post(url, headers=headers, json={"jql": jql, "maxResults": 50, "fields": ["summary", "status"]})
+            resp.raise_for_status()
+        results = []
+        for issue in resp.json().get("issues", []):
+            fields = issue.get("fields", {})
+            results.append({
+                "key": issue.get("key", ""),
+                "summary": fields.get("summary", ""),
+                "status": fields.get("status", {}).get("name", ""),
+            })
+        return results
+    except Exception:
+        return []
+
+
 def _build_result_comment_adf(
     run_id: str,
     test_file: str,
@@ -125,6 +257,8 @@ def _build_result_comment_adf(
     total: int,
     duration: float,
     failures: list[dict[str, str]],
+    passed_tests: list[dict[str, str]] | None = None,
+    stability_hint: str = "",
 ) -> dict:
     """Build an Atlassian Document Format (ADF) body for the test result comment."""
     content: list[dict] = []
@@ -138,6 +272,8 @@ def _build_result_comment_adf(
 
     # Summary paragraph
     summary = f"Run: {run_id} | File: {test_file} | Duration: {duration:.1f}s"
+    if stability_hint:
+        summary += f" | {stability_hint}"
     content.append({
         "type": "paragraph",
         "content": [{"type": "text", "text": summary}],
@@ -171,6 +307,23 @@ def _build_result_comment_adf(
         ],
     })
 
+    # Per-test pass list
+    if passed_tests:
+        content.append({
+            "type": "heading",
+            "attrs": {"level": 4},
+            "content": [{"type": "text", "text": "Passed Tests"}],
+        })
+        for pt in passed_tests[:15]:
+            name = pt.get("test_name", "unknown")
+            content.append({
+                "type": "paragraph",
+                "content": [
+                    {"type": "text", "text": f"PASS ", "marks": [{"type": "strong"}]},
+                    {"type": "text", "text": name},
+                ],
+            })
+
     # Failures detail
     if failures:
         content.append({
@@ -184,7 +337,7 @@ def _build_result_comment_adf(
             content.append({
                 "type": "paragraph",
                 "content": [
-                    {"type": "text", "text": f"{name}: ", "marks": [{"type": "strong"}]},
+                    {"type": "text", "text": f"FAIL {name}: ", "marks": [{"type": "strong"}]},
                     {"type": "text", "text": error},
                 ],
             })

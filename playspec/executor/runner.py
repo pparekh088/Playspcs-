@@ -9,6 +9,7 @@ from typing import Any
 
 from playspec.config import ExecutionProfile
 from playspec.console import console
+from playspec.manifest import parse_jira_keys, parse_describe_jira_keys
 from playspec.schemas.execution_result import ExecutionResult, PassedTest, TestFailure, FailureType
 
 
@@ -113,6 +114,13 @@ def _parse_json_report(json_path: Path, run_id: str, test_files: list[str] | Non
     for tf in (test_files or []):
         _basename_to_full[Path(tf).name] = tf
 
+    # Pre-compute per-file Jira key maps
+    _file_jira_keys: dict[str, list[str]] = {}
+    _file_describe_keys: dict[str, dict[str, list[str]]] = {}
+    for tf in (test_files or []):
+        _file_jira_keys[tf] = parse_jira_keys(tf)
+        _file_describe_keys[tf] = parse_describe_jira_keys(tf)
+
     def _resolve_file(reported: str) -> str:
         """Return the full path for a reported file name."""
         if not reported:
@@ -121,21 +129,43 @@ def _parse_json_report(json_path: Path, run_id: str, test_files: list[str] | Non
             return reported
         return _basename_to_full.get(reported, reported)
 
-    def _walk_suite(suite: dict, file_hint: str = "") -> None:
+    import re
+    _jira_key_re = re.compile(r"[A-Z]+-\d+")
+
+    def _resolve_jira_keys(test_file: str, describe_path: str) -> list[str]:
+        """Determine which Jira keys a test belongs to based on its describe path."""
+        # First: check if the suite title itself contains a Jira key
+        keys_from_describe: list[str] = _jira_key_re.findall(describe_path) if describe_path else []
+        if keys_from_describe:
+            return keys_from_describe
+        # Fallback: file-level @jira keys
+        return _file_jira_keys.get(test_file, [])
+
+    def _walk_suite(suite: dict, file_hint: str = "", describe_path: str = "") -> None:
         nonlocal total, passed, failed, skipped
         raw_file = suite.get("file", "") or file_hint
         file_name = _resolve_file(raw_file) or file_hint
+
+        suite_title = suite.get("title", "")
+        current_describe = f"{describe_path} > {suite_title}".strip(" >") if suite_title else describe_path
+
         for spec in suite.get("specs", []):
             spec_file = _resolve_file(spec.get("file", "")) or file_name
             test_file = spec_file
             test_name = spec.get("title", "")
+            jira_keys = _resolve_jira_keys(test_file, current_describe)
             for test in spec.get("tests", []):
                 total += 1
                 status = test.get("status", "")
                 if status == "expected":
                     passed += 1
                     passing_test_keys.append(f"{test_file}::{test_name}")
-                    passed_tests.append(PassedTest(test_file=test_file, test_name=test_name))
+                    passed_tests.append(PassedTest(
+                        test_file=test_file,
+                        test_name=test_name,
+                        jira_keys=jira_keys,
+                        describe_path=current_describe,
+                    ))
                 elif status == "skipped":
                     skipped += 1
                 else:
@@ -149,9 +179,11 @@ def _parse_json_report(json_path: Path, run_id: str, test_files: list[str] | Non
                         error_message=error.get("message", ""),
                         stack_trace=error.get("stack", ""),
                         artifact_paths=[a.get("path", "") for a in last.get("attachments", [])],
+                        jira_keys=jira_keys,
+                        describe_path=current_describe,
                     ))
         for child in suite.get("suites", []):
-            _walk_suite(child, file_name)
+            _walk_suite(child, file_name, current_describe)
 
     for suite in data.get("suites", []):
         _walk_suite(suite)

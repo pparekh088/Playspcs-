@@ -25,6 +25,8 @@ class TestFailure(BaseModel):
     error_message: str = ""
     stack_trace: str = ""
     artifact_paths: list[str] = Field(default_factory=list)
+    jira_keys: list[str] = Field(default_factory=list)
+    describe_path: str = ""
 
 
 class PassedTest(BaseModel):
@@ -32,6 +34,8 @@ class PassedTest(BaseModel):
 
     test_file: str
     test_name: str
+    jira_keys: list[str] = Field(default_factory=list)
+    describe_path: str = ""
 
 
 class ExecutionResult(BaseModel):

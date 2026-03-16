@@ -143,6 +143,8 @@ def load_config(path: Path | None = None) -> PlaySpecConfig:
         FileNotFoundError: If no config file can be found.
         ValueError: If the YAML is invalid or fails Pydantic validation.
     """
+    _load_dotenv()
+
     if path is None:
         path = _find_config_path()
     if path is None or not path.is_file():
@@ -158,6 +160,21 @@ def load_config(path: Path | None = None) -> PlaySpecConfig:
         return PlaySpecConfig.model_validate(data)
     except Exception as exc:
         raise ValueError(f"Invalid config in {path}: {exc}") from exc
+
+
+def _load_dotenv() -> None:
+    """Load .env file from the project root (if present) into os.environ."""
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    # Walk up from cwd to find .env next to .playspec/
+    cwd = Path.cwd()
+    for parent in [cwd, *cwd.parents]:
+        env_file = parent / ".env"
+        if env_file.is_file():
+            load_dotenv(env_file, override=False)
+            return
 
 
 _ENV_VAR_RE = re.compile(r"\$([A-Z_][A-Z0-9_]*)")
