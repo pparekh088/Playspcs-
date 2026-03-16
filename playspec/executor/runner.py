@@ -39,12 +39,15 @@ def run_tests(
 
     console.print(f"[dim]Executing: {' '.join(cmd[:6])}…[/dim]")
 
+    env = {**__import__("os").environ, "PLAYWRIGHT_JSON_OUTPUT_FILE": str(json_report)}
+
     try:
         proc = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=timeout_minutes * 60,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         console.print("[red]Playwright execution timed out.[/red]")
@@ -74,7 +77,7 @@ def _build_command(
     cmd = [
         "npx", "playwright", "test",
         *test_files,
-        f"--reporter=json:{json_report}",
+        "--reporter=json",
         f"--output={run_dir / 'artifacts'}",
         f"--workers={profile.parallelism}",
     ]

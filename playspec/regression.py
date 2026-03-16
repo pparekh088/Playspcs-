@@ -15,7 +15,8 @@ from playspec.console import console
 from playspec.executor.runner import run_tests
 from playspec.executor.diagnostics import classify_failure, generate_suggested_fixes
 from playspec.integrations.git_client import get_changed_files, get_current_branch, get_current_sha, get_pr_changed_files
-from playspec.manifest import load_manifest, Manifest
+from playspec.integrations.jira_client import post_test_results
+from playspec.manifest import load_manifest, Manifest, parse_jira_key
 from playspec.run_id import generate_run_id
 from playspec.schemas.audit_entry import AuditResults, RunMode
 from playspec.schemas.execution_result import ExecutionResult
@@ -150,9 +151,67 @@ def run_regression(
 
     _print_summary(result, suggested, run_id)
 
+    _post_results_to_jira(resolved_files, result, run_id)
+
     is_blocking = suite_names and any(manifest.is_blocking(s) for s in suite_names)
     if result.failed > 0 and is_blocking:
         raise SystemExit(1)
+
+
+def _post_results_to_jira(
+    resolved_files: list[str],
+    result: ExecutionResult,
+    run_id: str,
+) -> None:
+    """Post test results as comments to each relevant Jira ticket."""
+    import os
+    if not all([os.getenv("JIRA_BASE_URL"), os.getenv("JIRA_EMAIL"), os.getenv("JIRA_API_TOKEN")]):
+        return
+
+    # Map jira keys to their test files
+    jira_map: dict[str, list[str]] = {}
+    for f in resolved_files:
+        key = parse_jira_key(f)
+        if key:
+            jira_map.setdefault(key, []).append(f)
+
+    if not jira_map:
+        return
+
+    console.print("\n[bold]Posting results to Jira:[/bold]")
+
+    # Build a lookup of failures by test file
+    file_failures: dict[str, list[dict[str, str]]] = {}
+    for failure in result.failures:
+        file_failures.setdefault(failure.test_file, []).append({
+            "test_name": failure.test_name,
+            "error_message": failure.error_message,
+        })
+
+    # Build a lookup of passed tests by file
+    file_passed: dict[str, int] = {}
+    for pt in result.passed_tests:
+        file_passed[pt.test_file] = file_passed.get(pt.test_file, 0) + 1
+
+    for jira_key, files in jira_map.items():
+        passed = sum(file_passed.get(f, 0) for f in files)
+        failures = []
+        for f in files:
+            failures.extend(file_failures.get(f, []))
+        failed = len(failures)
+        total = passed + failed
+
+        post_test_results(
+            jira_key=jira_key,
+            run_id=run_id,
+            test_file=", ".join(files),
+            passed=passed,
+            failed=failed,
+            skipped=0,
+            total=total,
+            duration_seconds=result.duration_seconds,
+            failures=failures,
+        )
 
 
 def _run_hooks(manifest: Manifest, suite_names: list[str] | None, phase: str) -> None:
