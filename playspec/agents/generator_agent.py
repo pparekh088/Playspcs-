@@ -42,15 +42,28 @@ def generate_tests(
         from playspec.parsers.codebase_scanner import scan_conventions
         conventions = scan_conventions(config)
         context["conventions"] = conventions.model_dump_json(indent=2)
-    except Exception:
-        pass
+    except Exception as exc:
+        console.print(f"[yellow]Warning: conventions scan failed: {exc}[/yellow]")
+        context["conventions"] = "{}"
 
     prompt = load_prompt("generator", context)
-    response = backend.invoke(prompt)
 
     generated: list[str] = []
-    try:
-        files = json.loads(response.content)
+    last_exc: Exception | None = None
+
+    for attempt in range(1, 4):
+        if attempt > 1:
+            console.print(f"  [yellow]Retrying generation (attempt {attempt}/3)…[/yellow]")
+
+        response = backend.invoke(prompt)
+
+        try:
+            files = json.loads(response.content)
+        except json.JSONDecodeError as exc:
+            last_exc = exc
+            console.print(f"  [yellow]JSON parse failed on attempt {attempt}: {exc}[/yellow]")
+            continue
+
         if isinstance(files, dict):
             for filename, content in files.items():
                 path = output_dir / filename
@@ -66,10 +79,14 @@ def generate_tests(
                     path.write_text(entry["content"], encoding="utf-8")
                     generated.append(str(path))
                     console.print(f"  [green]✓[/green] {path}")
-    except (json.JSONDecodeError, Exception) as exc:
-        console.print(f"[yellow]Warning: Could not parse generated files: {exc}[/yellow]")
-        fallback_path = output_dir / "generated.spec.ts"
-        fallback_path.write_text(response.content, encoding="utf-8")
-        generated.append(str(fallback_path))
+
+        if generated:
+            break
+
+    if not generated:
+        raise RuntimeError(
+            f"Generator failed to produce valid test files after 3 attempts. "
+            f"Last error: {last_exc}"
+        )
 
     return generated

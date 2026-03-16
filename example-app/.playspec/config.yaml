@@ -1,0 +1,28 @@
+test_dir: tests/e2e
+page_objects_dir: tests/e2e/pages
+fixtures_dir: tests/e2e/fixtures
+naming_convention: kebab-case
+max_retries: 3
+
+profiles:
+  local-dev:
+    base_url: "http://localhost:3000"
+    browsers: [chromium]
+    parallelism: 2
+    headed: false
+    repair_policy: never
+    generation_allowed: true
+    flaky_detection: true
+
+  pr-ci:
+    base_url: "http://localhost:3000"
+    browsers: [chromium]
+    parallelism: 4
+    headed: false
+    repair_policy: never
+    blocking: true
+
+audit:
+  enabled: true
+  output_dir: .playspec/audits
+  retention_days: 90

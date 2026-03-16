@@ -42,8 +42,8 @@ def run_regression(
     profile = config.get_profile(profile_name)
 
     if profile.repair_policy != RepairPolicy.NEVER:
-        console.print("[bold red]ERROR:[/bold red] Regression mode requires repair_policy='never'. Aborting.")
-        raise SystemExit(1)
+        console.print("[yellow]Warning: regression mode requires repair_policy='never'. Auto-correcting.[/yellow]")
+        profile.repair_policy = RepairPolicy.NEVER
 
     if base_url_override:
         profile = profile.model_copy(update={"base_url": base_url_override})
@@ -117,8 +117,22 @@ def run_regression(
         )
 
     stability = load_stability()
-    updates = stability.update(result)
+    updates = stability.update(result, run_id=run_id)
     save_stability(stability)
+
+    quarantine_candidates = stability.recommend_quarantine()
+    if quarantine_candidates:
+        new_quarantined = [q for q in quarantine_candidates if q not in manifest.get_quarantined()]
+        if new_quarantined:
+            for key in new_quarantined:
+                manifest.raw.quarantine.append(key)
+                console.print(f"[yellow]Auto-quarantined flaky test:[/yellow] {key}")
+            if manifest.path:
+                import yaml
+                manifest.path.write_text(
+                    yaml.safe_dump(manifest.raw.model_dump(), default_flow_style=False),
+                    encoding="utf-8",
+                )
 
     audit_entry = create_audit(
         run_id=run_id,
